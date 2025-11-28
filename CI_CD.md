@@ -4,47 +4,34 @@ This document describes the continuous integration and continuous deployment (CI
 
 ## Overview
 
-The project uses GitHub Actions for automated testing, building, and releasing across multiple platforms. The CI/CD system is designed with a **reusable workflow** to eliminate code duplication between regular CI builds and release builds.
+The project uses GitHub Actions for automated testing, building, and releasing across multiple platforms.
 
-## Workflow Architecture
-
-### Reusable Build Workflow (`.github/workflows/build.yaml`)
-
-This is the core reusable workflow that handles building the HAProxy OTEL module for all supported platforms. Both the CI and release workflows call this workflow to avoid code duplication.
-
-**Features:**
-- Matrix build strategy for multiple platforms and architectures
-- Cross-compilation support for ARM64 Linux
-- Automatic binary stripping to reduce size
-- Artifact renaming for distribution
-- Optional artifact upload (controlled via input parameter)
-
-**Supported Platforms:**
-- Linux x86_64 (native build)
-- Linux ARM64 (cross-compilation using `cross`)
-- macOS x86_64 (native build)
-- macOS ARM64 (native build)
+## Workflows
 
 ### Main CI Workflow (`.github/workflows/main.yaml`)
 
-Triggered on every push and pull request. This workflow includes:
+Triggered on every push and pull request.
 
 #### Jobs
 
-1. **Test** - Runs integration tests on Ubuntu with HAProxy 3.2
-   - Sets up Rust toolchain
-   - Installs HAProxy 3.2 from PPA
-   - Runs test suite: `cargo test -p haproxy-otel-tests`
+1. **build** - Matrix build job that tests and builds for all platforms
+   - **Test on Linux x86_64**: 
+     - Sets up Rust toolchain
+     - Installs HAProxy 3.2 from PPA
+     - Runs test suite: `cargo test -p haproxy-otel-tests`
+     - Builds the module
+   - **Cross-platform builds**:
+     - Linux x86_64 (native build with tests)
+     - Linux ARM64 (cross-compilation using `cross`)
+     - macOS x86_64 (native build)
+     - macOS ARM64 (native build)
+   - Uploads build artifacts for each platform
 
-2. **Build** - Calls the reusable build workflow
-   - Builds the module for all platforms
-   - Uploads build artifacts
-
-3. **Rustfmt** - Checks code formatting
+2. **rustfmt** - Checks code formatting
    - Uses nightly Rust toolchain
    - Validates with `cargo fmt -- --check`
 
-4. **Clippy** - Runs Rust linter
+3. **clippy** - Runs Rust linter
    - Uses nightly Rust toolchain
    - Reports issues through GitHub PR reviews
 
@@ -54,20 +41,21 @@ Triggered on tag creation (tags matching `v*` pattern, e.g., `v0.2.0`).
 
 #### Jobs
 
-1. **Build Release** - Calls the reusable build workflow
-   - Builds optimized release binaries for all platforms
-   - Uploads artifacts for the release
-
-2. **Create Release** - Creates a GitHub Release
-   - Downloads all build artifacts
-   - Creates release with auto-generated notes
-   - Attaches all platform binaries:
+1. **build-release** - Matrix build for all platforms
+   - Builds optimized release binaries for all platforms:
      - `libhaproxy_otel_module-linux-x86_64.so`
      - `libhaproxy_otel_module-linux-aarch64.so`
      - `libhaproxy_otel_module-macos-x86_64.dylib`
      - `libhaproxy_otel_module-macos-aarch64.dylib`
+   - Strips debug symbols from binaries
+   - Uploads artifacts for the release
 
-3. **Publish Crate** (Optional) - Publishes to crates.io
+2. **create-release** - Creates a GitHub Release
+   - Downloads all build artifacts
+   - Creates release with auto-generated notes
+   - Attaches all platform binaries
+
+3. **publish-crate** (Optional) - Publishes to crates.io
    - Only runs for the `caseware` organization
    - Requires `CARGO_TOKEN` secret
    - Continues on error if already published or token not set
