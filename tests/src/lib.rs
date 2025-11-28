@@ -225,16 +225,25 @@ async fn custom_headers_test() {
     );
 
     // Verify the custom headers were included
+    // Note: HTTP headers are case-insensitive, wiremock may normalize them
     let request = &otlp_requests[0];
+    
+    // Check for X-Custom-Header (try both cases)
+    let has_custom_header = request.headers.contains_key("x-custom-header") 
+        || request.headers.contains_key("X-Custom-Header");
     assert!(
-        request.headers.contains_key("x-custom-header"),
+        has_custom_header,
         "Expected X-Custom-Header to be present"
     );
+    
+    let custom_header_value = request.headers.get("x-custom-header")
+        .or_else(|| request.headers.get("X-Custom-Header"));
     assert_eq!(
-        request.headers.get("x-custom-header").unwrap(),
+        custom_header_value.unwrap(),
         "custom-value",
         "Expected X-Custom-Header value to be 'custom-value'"
     );
+    
     assert!(
         request.headers.contains_key("api-key"),
         "Expected api-key header to be present"
