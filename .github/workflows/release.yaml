@@ -9,32 +9,34 @@ permissions:
   contents: write
 
 jobs:
+  build-release:
+    name: Build Release
+    uses: ./.github/workflows/build.yaml
+    with:
+      upload-artifacts: true
+
   create-release:
     name: Create Release
+    needs: build-release
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
     steps:
-      - name: Get version from tag
-        id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      
+      - name: Display structure of downloaded files
+        run: ls -R release-artifacts
       
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
           draft: false
           prerelease: false
+          generate_release_notes: true
           body: |
-            ## Changes in this Release
-            
-            See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details.
-            
             ## Installation
             
             Download the appropriate library for your platform:
@@ -42,74 +44,19 @@ jobs:
             - Linux ARM64: `libhaproxy_otel_module-linux-aarch64.so`
             - macOS x86_64: `libhaproxy_otel_module-macos-x86_64.dylib`
             - macOS ARM64: `libhaproxy_otel_module-macos-aarch64.dylib`
-
-  build-release:
-    name: Build Release - ${{ matrix.os }} (${{ matrix.target }})
-    needs: create-release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux builds
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: libhaproxy_otel_module.so
-            release_name: libhaproxy_otel_module-linux-x86_64.so
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            artifact_name: libhaproxy_otel_module.so
-            release_name: libhaproxy_otel_module-linux-aarch64.so
-            cross: true
-          # macOS builds
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: libhaproxy_otel_module.dylib
-            release_name: libhaproxy_otel_module-macos-x86_64.dylib
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: libhaproxy_otel_module.dylib
-            release_name: libhaproxy_otel_module-macos-aarch64.dylib
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      
-      - name: Install cross-compilation tools
-        if: matrix.cross
-        run: |
-          cargo install cross --git https://github.com/cross-rs/cross
-      
-      - name: Build release
-        run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }} -p haproxy-otel-module
-          else
-            cargo build --release --target ${{ matrix.target }} -p haproxy-otel-module
-          fi
-        shell: bash
-      
-      - name: Strip binary (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }} || true
-        shell: bash
-      
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-          asset_name: ${{ matrix.release_name }}
-          asset_content_type: application/octet-stream
+            
+            ## Usage
+            
+            Place the downloaded library in a location accessible to HAProxy and reference it in your Lua script.
+            See the [README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for configuration details.
+          files: |
+            release-artifacts/**/*
 
   publish-crate:
     name: Publish to crates.io
-    needs: [create-release, build-release]
+    needs: create-release
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'caseware'
     steps:
       - uses: actions/checkout@v4
       
