@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use haproxy_api::{Action, Core};
 use mlua::prelude::{Lua, LuaExternalResult as _, LuaResult, LuaTable};
 
@@ -12,6 +14,24 @@ pub fn register(lua: &Lua, options: LuaTable) -> LuaResult<()> {
     let otlp = (options.get::<LuaTable>("otlp")).unwrap_or_else(|_| lua.create_table().unwrap());
     let endpoint = (otlp.get::<Option<String>>("endpoint")).unwrap_or_default();
     let protocol = (otlp.get::<Option<String>>("protocol")).unwrap_or_default();
+    
+    // Extract headers from the otlp table if provided
+    let headers = match otlp.get::<LuaTable>("headers") {
+        Ok(headers_table) => {
+            let mut headers_map = HashMap::new();
+            for pair in headers_table.pairs::<String, String>() {
+                if let Ok((key, value)) = pair {
+                    headers_map.insert(key, value);
+                }
+            }
+            if headers_map.is_empty() {
+                None
+            } else {
+                Some(headers_map)
+            }
+        }
+        Err(_) => None,
+    };
 
     let options = exporter::Options {
         service_name: service_name.clone(),
@@ -19,6 +39,7 @@ pub fn register(lua: &Lua, options: LuaTable) -> LuaResult<()> {
         propagator: propagator.clone(),
         endpoint: endpoint.clone(),
         protocol: protocol.clone(),
+        headers: headers.clone(),
     };
     lua.set_app_data(options.clone());
 

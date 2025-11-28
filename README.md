@@ -65,6 +65,7 @@ opentelemetry.register({
 | `propagator`    | Trace context propagation format | `"w3c"`, `"zipkin"`, `"jaeger"`              | `"w3c"`                            |
 | `otlp.endpoint` | OTLP collector endpoint URL      | URL string                                   | `"http://localhost:4318/v1/trace"` |
 | `otlp.protocol` | OTLP protocol format             | `"json"`, `"binary"`                         | `"binary"`                         |
+| `otlp.headers`  | Custom HTTP headers for OTLP requests | Lua table of key-value pairs         | None                               |
 
 ### Tracing
 
@@ -93,6 +94,31 @@ http-request lua.set_span_attribute_var user.id txn.user_id
 ```
 
 You need to assign a value to a variable first, and then use the `lua.set_span_attribute_var` function to add the attribute to the span.
+
+### Using Custom Headers for SaaS Providers
+
+You can send traces directly to SaaS telemetry providers (like New Relic, Honeycomb, etc.) by specifying custom HTTP headers. This eliminates the need for a proxy collector.
+
+Example configuration for New Relic:
+
+```lua
+local opentelemetry = require("haproxy_otel_module")
+
+opentelemetry.register({
+    name = "loadbalancer",
+    sampler = "AlwaysOn",
+    propagator = "w3c",
+    otlp = {
+        endpoint = "https://otlp.nr-data.net/v1/traces",
+        protocol = "json",
+        headers = {
+            ["api-key"] = "<YOUR_NEW_RELIC_API_KEY>"
+        }
+    }
+})
+```
+
+Replace `<YOUR_NEW_RELIC_API_KEY>` with your actual New Relic API key. Other providers may require different header names (e.g., `Authorization`, `X-API-Key`, etc.).
 
 ## Integration with OpenTelemetry Collector
 

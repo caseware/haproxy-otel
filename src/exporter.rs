@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::error::Error as StdError;
 
 use opentelemetry_jaeger_propagator as opentelemetry_jaeger;
 use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_otlp::WithHttpConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
 use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, SdkTracerProvider};
@@ -17,6 +19,8 @@ pub(crate) struct Options {
     pub(crate) endpoint: Option<String>,
     // Can be: "binary" or "json"
     pub(crate) protocol: Option<String>,
+    // Custom HTTP headers to include in OTLP requests
+    pub(crate) headers: Option<HashMap<String, String>>,
 }
 
 pub fn init(options: Options) -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {
@@ -46,6 +50,10 @@ pub fn init(options: Options) -> Result<(), Box<dyn StdError + Send + Sync + 'st
                 exporter_builder.with_protocol(opentelemetry_otlp::Protocol::HttpJson);
         }
         _ => {}
+    }
+    // Apply custom headers if provided
+    if let Some(headers) = options.headers {
+        exporter_builder = exporter_builder.with_headers(headers);
     }
     let exporter = exporter_builder.build()?;
 
