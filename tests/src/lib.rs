@@ -171,6 +171,92 @@ async fn run_tests(server: &MockServer) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+#[tokio::test]
+async fn custom_headers_test() {
+    // Compile haproxy-otel-module
+    tokio::process::Command::new("cargo")
+        .args(&["build", "--release", "-p", "haproxy-otel-module"])
+        .current_dir("..")
+        .status()
+        .await
+        .expect("Failed to compile haproxy-otel-module");
+
+    // Start the mock server on port 4318
+    let listener = TcpListener::bind("127.0.0.1:4318").unwrap();
+    let mock_server = MockServer::builder().listener(listener).start().await;
+
+    // Set up the OTLP mock that expects custom headers
+    let otlp_mock = Mock::given(method("POST"))
+        .and(path("/v1/trace"))
+        .and(wiremock::matchers::header("X-Custom-Header", "custom-value"))
+        .and(wiremock::matchers::header("api-key", "test-api-key-12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"accepted": true})))
+        .expect(1)
+        .mount_as_scoped(&mock_server)
+        .await;
+
+    // Spawn haproxy with custom headers configuration and wait
+    let mut haproxy = tokio::process::Command::new("haproxy")
+        .args(&["-f", "haproxy-with-headers.cfg"])
+        .kill_on_drop(true)
+        .spawn()
+        .expect("Failed to start haproxy");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // Make a request to HAProxy to trigger trace export
+    let client = reqwest::Client::new();
+    let response = client
+        .get("http://localhost:8081/status")
+        .send()
+        .await
+        .expect("Failed to send request");
+    assert_eq!(response.status(), 200);
+
+    // Verify the mock received the request with expected headers
+    timeout(Duration::from_secs(10), otlp_mock.wait_until_satisfied())
+        .await
+        .expect("OTLP mock was not satisfied - custom headers may not have been sent");
+
+    let otlp_requests = otlp_mock.received_requests().await;
+    assert_eq!(
+        otlp_requests.len(),
+        1,
+        "Expected exactly one OTLP request"
+    );
+
+    // Verify the custom headers were included
+    // Note: HTTP headers are case-insensitive, wiremock may normalize them
+    let request = &otlp_requests[0];
+    
+    // Check for X-Custom-Header (try both cases)
+    let has_custom_header = request.headers.contains_key("x-custom-header") 
+        || request.headers.contains_key("X-Custom-Header");
+    assert!(
+        has_custom_header,
+        "Expected X-Custom-Header to be present"
+    );
+    
+    let custom_header_value = request.headers.get("x-custom-header")
+        .or_else(|| request.headers.get("X-Custom-Header"));
+    assert_eq!(
+        custom_header_value.unwrap(),
+        "custom-value",
+        "Expected X-Custom-Header value to be 'custom-value'"
+    );
+    
+    assert!(
+        request.headers.contains_key("api-key"),
+        "Expected api-key header to be present"
+    );
+    assert_eq!(
+        request.headers.get("api-key").unwrap(),
+        "test-api-key-12345",
+        "Expected api-key value to be 'test-api-key-12345'"
+    );
+
+    haproxy.kill().await.expect("Failed to stop haproxy");
+}
+
 fn find_attribute<'a>(attributes: &'a JsonValue, key: &str) -> Option<&'a str> {
     (attributes.as_array()?)
         .iter()
