@@ -5,6 +5,7 @@ opentelemetry.register({
 	otlp = {
 		endpoint = "http://localhost:4317/v1/trace",
 		protocol = "json",
+		log_level = "debug",
 	},
 	sampler = "AlwaysOn",
 	propagator = "zipkin",
