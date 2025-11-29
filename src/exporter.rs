@@ -17,6 +17,8 @@ pub(crate) struct Options {
     pub(crate) endpoint: Option<String>,
     // Can be: "binary" or "json"
     pub(crate) protocol: Option<String>,
+    // Can be: "debug", "info", "warning", "error", or "none"
+    pub(crate) log_level: Option<String>,
 }
 
 pub fn init(options: Options) -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {

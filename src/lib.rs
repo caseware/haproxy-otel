@@ -12,6 +12,7 @@ pub fn register(lua: &Lua, options: LuaTable) -> LuaResult<()> {
     let otlp = (options.get::<LuaTable>("otlp")).unwrap_or_else(|_| lua.create_table().unwrap());
     let endpoint = (otlp.get::<Option<String>>("endpoint")).unwrap_or_default();
     let protocol = (otlp.get::<Option<String>>("protocol")).unwrap_or_default();
+    let log_level = (otlp.get::<Option<String>>("log_level")).unwrap_or_default();
 
     let options = exporter::Options {
         service_name: service_name.clone(),
@@ -19,8 +20,14 @@ pub fn register(lua: &Lua, options: LuaTable) -> LuaResult<()> {
         propagator: propagator.clone(),
         endpoint: endpoint.clone(),
         protocol: protocol.clone(),
+        log_level: log_level.clone(),
     };
     lua.set_app_data(options.clone());
+
+    // Initialize tracing subscriber if log_level is configured
+    if options.log_level.is_some() {
+        tracing_logger::init_tracing(&options.log_level);
+    }
 
     if core.thread()? <= 1 {
         core.register_task(move |_lua| exporter::init(options.clone()).into_lua_err())?;
@@ -44,3 +51,4 @@ mod exporter;
 mod filter;
 mod runtime;
 mod span;
+mod tracing_logger;

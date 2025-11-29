@@ -23,8 +23,10 @@ opentelemetry = { version = "0.30", default-features = false, features = ["trace
 opentelemetry_sdk = { version = "0.30", default-features = false, features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"] }
 opentelemetry-semantic-conventions = { version = "0.30", features = ["semconv_experimental"] }
 opentelemetry-http = "0.30"
-opentelemetry-otlp = { version = "0.30", default-features = false, features = ["http-proto", "http-json", "trace", "reqwest-client"] }
+opentelemetry-otlp = { version = "0.30", default-features = false, features = ["http-proto", "http-json", "trace", "reqwest-client", "internal-logs"] }
 opentelemetry-zipkin = { version = "0.30", default-features = false }
 opentelemetry-jaeger-propagator = "0.30"
 quick_cache = "0.6.14"
 const-hex = "1.14.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

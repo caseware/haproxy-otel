@@ -65,6 +65,7 @@ opentelemetry.register({
 | `propagator`    | Trace context propagation format | `"w3c"`, `"zipkin"`, `"jaeger"`              | `"w3c"`                            |
 | `otlp.endpoint` | OTLP collector endpoint URL      | URL string                                   | `"http://localhost:4318/v1/trace"` |
 | `otlp.protocol` | OTLP protocol format             | `"json"`, `"binary"`                         | `"binary"`                         |
+| `otlp.log_level`| Debug logging level for trace exports | `"debug"`, `"info"`, `"warning"`, `"error"`, or omit to disable | (disabled)          |
 
 ### Tracing
 
@@ -93,6 +94,41 @@ http-request lua.set_span_attribute_var user.id txn.user_id
 ```
 
 You need to assign a value to a variable first, and then use the `lua.set_span_attribute_var` function to add the attribute to the span.
+
+### Debug Logging for Trace Exports
+
+To troubleshoot issues with trace export, you can enable debug logging by setting the `log_level` option in the `otlp` configuration:
+
+```lua
+opentelemetry.register({
+    name = "loadbalancer",
+    otlp = {
+        endpoint = "http://otel-collector:4317/v1/trace",
+        protocol = "json",
+        log_level = "debug",  -- Enable exhaustive debug logging
+    }
+})
+```
+
+When enabled, the module will log detailed information about:
+- HTTP request details (method, URI, headers)
+- Request body size
+- HTTP response status codes
+- Response headers
+- Response body size
+- Connection errors, timeouts, and other failures
+- All internal OpenTelemetry SDK operations
+
+All logs are prefixed with `[haproxy-otel]` and written to stderr, which HAProxy captures in its logs.
+
+**Log Levels:**
+- `debug` - Most verbose, logs all OpenTelemetry operations and HTTP request/response details
+- `info` - Logs important events and successful operations
+- `warning` - Logs warnings and potential issues
+- `error` - Logs only errors and failures
+- Omit the option entirely to disable debug logging (recommended for production)
+
+**Note:** Debug logging can be verbose, especially at the `debug` level. Use it for troubleshooting and disable it in production environments to avoid log noise.
 
 ## Integration with OpenTelemetry Collector
 
