@@ -1,20 +1,6 @@
 use tracing::{Event, Subscriber};
 use tracing::span::{Attributes, Id, Record};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use std::sync::Mutex;
-use std::collections::VecDeque;
-
-/// A global queue for log messages that will be written to stderr
-/// since HAProxy Core.log requires a Lua context which isn't available in background threads
-static LOG_BUFFER: Mutex<Option<VecDeque<String>>> = Mutex::new(None);
-
-/// Initialize the log buffer
-fn init_log_buffer() {
-    let mut buffer = LOG_BUFFER.lock().unwrap();
-    if buffer.is_none() {
-        *buffer = Some(VecDeque::new());
-    }
-}
 
 /// Log a message - writes directly to stderr since we can't access HAProxy Core from background threads
 fn log_message(message: String) {
@@ -124,6 +110,8 @@ struct MessageVisitor<'a> {
 impl<'a> tracing::field::Visit for MessageVisitor<'a> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
+            // For message field, format using Debug but we'll handle it as a string
+            // This preserves the original formatting from the tracing event
             self.message.push_str(&format!("{:?}", value));
         } else {
             if !self.message.is_empty() {
@@ -135,6 +123,7 @@ impl<'a> tracing::field::Visit for MessageVisitor<'a> {
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
         if field.name() == "message" {
+            // For message field, use the string directly without quotes
             self.message.push_str(value);
         } else {
             if !self.message.is_empty() {
@@ -143,36 +132,55 @@ impl<'a> tracing::field::Visit for MessageVisitor<'a> {
             self.message.push_str(&format!("{}={}", field.name(), value));
         }
     }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        if !self.message.is_empty() {
+            self.message.push_str(", ");
+        }
+        self.message.push_str(&format!("{}={}", field.name(), value));
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        if !self.message.is_empty() {
+            self.message.push_str(", ");
+        }
+        self.message.push_str(&format!("{}={}", field.name(), value));
+    }
+
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        if !self.message.is_empty() {
+            self.message.push_str(", ");
+        }
+        self.message.push_str(&format!("{}={}", field.name(), value));
+    }
 }
 
 /// Initialize the tracing subscriber with HAProxy logging
-pub(crate) fn init_tracing(log_level: Option<String>) {
+pub(crate) fn init_tracing(log_level: &Option<String>) {
     // Check if already initialized
     if tracing::dispatcher::has_been_set() {
         return;
     }
 
-    init_log_buffer();
-
     // Determine the tracing level based on configuration
     let filter_level = match log_level.as_deref() {
         Some("debug") => "debug",
         Some("info") => "info",
-        Some("warning") | Some("warn") => "warn",
+        Some("warning") => "warn",
         Some("error") => "error",
         _ => return, // Don't initialize tracing if no log level is set
     };
 
     // Create an EnvFilter that enables debug logging for OpenTelemetry crates
     let env_filter = EnvFilter::new(filter_level)
-        .add_directive("opentelemetry=debug".parse().unwrap())
-        .add_directive("opentelemetry_sdk=debug".parse().unwrap())
-        .add_directive("opentelemetry_otlp=debug".parse().unwrap())
-        .add_directive("opentelemetry_http=debug".parse().unwrap())
-        .add_directive("reqwest=debug".parse().unwrap())
-        .add_directive("hyper=info".parse().unwrap()); // Hyper is too verbose at debug
+        .add_directive("opentelemetry=debug".parse().expect("Failed to parse opentelemetry directive"))
+        .add_directive("opentelemetry_sdk=debug".parse().expect("Failed to parse opentelemetry_sdk directive"))
+        .add_directive("opentelemetry_otlp=debug".parse().expect("Failed to parse opentelemetry_otlp directive"))
+        .add_directive("opentelemetry_http=debug".parse().expect("Failed to parse opentelemetry_http directive"))
+        .add_directive("reqwest=debug".parse().expect("Failed to parse reqwest directive"))
+        .add_directive("hyper=info".parse().expect("Failed to parse hyper directive")); // Hyper is too verbose at debug
 
-    let haproxy_layer = HaproxyTracingLayer::new(log_level);
+    let haproxy_layer = HaproxyTracingLayer::new(log_level.clone());
 
     // Create a subscriber with our custom layer and env filter
     let subscriber = tracing_subscriber::registry()

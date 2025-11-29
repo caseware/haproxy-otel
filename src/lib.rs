@@ -26,7 +26,7 @@ pub fn register(lua: &Lua, options: LuaTable) -> LuaResult<()> {
 
     // Initialize tracing subscriber if log_level is configured
     if options.log_level.is_some() {
-        tracing_logger::init_tracing(options.log_level.clone());
+        tracing_logger::init_tracing(&options.log_level);
     }
 
     if core.thread()? <= 1 {
