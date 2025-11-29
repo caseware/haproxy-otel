@@ -1,4 +1,6 @@
-use haproxy_api::{Channel, FilterMethod, FilterResult, HttpMessage, Txn, UserFilter};
+use haproxy_api::{
+    Channel, Core, FilterMethod, FilterResult, HttpMessage, LogLevel, Txn, UserFilter,
+};
 use mlua::prelude::{Lua, LuaResult, LuaTable};
 use opentelemetry::propagation::Injector;
 use opentelemetry::trace::{self, TraceContextExt, Tracer};
@@ -56,9 +58,26 @@ impl TraceFilter {
             .app_data_ref::<crate::exporter::Options>()
             .map(|c| c.sampler.as_deref() == Some("SilentOn"))
             .unwrap_or_default();
+        let mut header_injector = HeaderInjector::new(&msg, silent_on);
         opentelemetry::global::get_text_map_propagator(|injector| {
-            injector.inject_context(&self.context, &mut HeaderInjector::new(&msg, silent_on));
+            injector.inject_context(&self.context, &mut header_injector);
         });
+
+        // Debug log the injected headers
+        if let Ok(core) = Core::new(lua) {
+            let injected = header_injector.get_injected_headers();
+            if !injected.is_empty() {
+                let headers_str = injected
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let _ = core.log(
+                    LogLevel::Debug,
+                    format!("[haproxy-otel] Injecting tracing headers: {}", headers_str),
+                );
+            }
+        }
 
         Ok(FilterResult::Continue)
     }
@@ -167,11 +186,20 @@ impl UserFilter for TraceFilter {
 struct HeaderInjector<'a> {
     msg: &'a HttpMessage,
     silent_on: bool,
+    injected_headers: Vec<(String, String)>,
 }
 
 impl<'a> HeaderInjector<'a> {
     fn new(msg: &'a HttpMessage, silent_on: bool) -> Self {
-        Self { msg, silent_on }
+        Self {
+            msg,
+            silent_on,
+            injected_headers: Vec::new(),
+        }
+    }
+
+    fn get_injected_headers(&self) -> &[(String, String)] {
+        &self.injected_headers
     }
 }
 
@@ -180,6 +208,8 @@ impl Injector for HeaderInjector<'_> {
         if self.silent_on && key.eq_ignore_ascii_case("x-b3-sampled") {
             return;
         }
+        // Store the header for debug logging
+        self.injected_headers.push((key.to_string(), value.clone()));
         let _ = self.msg.set_header(key, value);
     }
 }

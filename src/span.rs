@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use haproxy_api::Txn;
+use haproxy_api::{Core, LogLevel, Txn};
 use mlua::prelude::{Lua, LuaResult, LuaString, LuaTable};
 use opentelemetry::trace::{self, Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
@@ -12,12 +12,31 @@ use opentelemetry_semantic_conventions::trace::{
 use crate::{get_context, store_context};
 
 /// Starts a server span for the current transaction.
-pub(crate) fn start_server_span(_lua: &Lua, txn: Txn) -> LuaResult<()> {
+pub(crate) fn start_server_span(lua: &Lua, txn: Txn) -> LuaResult<()> {
     let tracer = opentelemetry::global::tracer("haproxy-otel");
     let http = txn.http()?;
 
     // Extract parent context from the request headers
     let headers = http.req_get_headers().and_then(tracing_headers2map)?;
+
+    // Debug log the extracted tracing headers
+    if let Ok(core) = Core::new(lua) {
+        if !headers.is_empty() {
+            let tracing_headers: Vec<String> = headers
+                .iter()
+                .filter(|(k, _)| k.as_str() != "host")
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect();
+            if !tracing_headers.is_empty() {
+                let headers_str = tracing_headers.join(", ");
+                let _ = core.log(
+                    LogLevel::Debug,
+                    format!("[haproxy-otel] Extracted tracing headers: {}", headers_str),
+                );
+            }
+        }
+    }
+
     let remote_context = opentelemetry::global::get_text_map_propagator(|p| p.extract(&headers));
 
     let method = txn.f.get_str("method", ())?;
