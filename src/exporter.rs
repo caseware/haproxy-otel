@@ -42,12 +42,12 @@ pub fn init(options: Options) -> Result<(), Box<dyn StdError + Send + Sync + 'st
         .with_endpoint((options.endpoint.as_deref()).unwrap_or("http://localhost:4318/v1/trace"));
     match options.protocol.as_deref() {
         None | Some("binary") => {
-            exporter_builder =
-                exporter_builder.with_protocol(opentelemetry_otlp::Protocol::HttpBinary);
+            exporter_builder = exporter_builder
+                .with_protocol(opentelemetry_otlp::Protocol::HttpBinary);
         }
         Some("json") => {
-            exporter_builder =
-                exporter_builder.with_protocol(opentelemetry_otlp::Protocol::HttpJson);
+            exporter_builder = exporter_builder
+                .with_protocol(opentelemetry_otlp::Protocol::HttpJson);
         }
         _ => {}
     }
@@ -55,7 +55,12 @@ pub fn init(options: Options) -> Result<(), Box<dyn StdError + Send + Sync + 'st
     if let Some(headers) = options.headers {
         exporter_builder = exporter_builder.with_headers(headers);
     }
-    let exporter = exporter_builder.build()?;
+    let exporter = match exporter_builder.build() {
+        Ok(exp) => exp,
+        Err(err) => {
+            return Err(Box::new(err));
+        }
+    };
 
     let processor =
         BatchSpanProcessor::builder(exporter, crate::runtime::HaproxyTokio::new()).build();

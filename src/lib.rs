@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use haproxy_api::{Action, Core};
-use mlua::prelude::{Lua, LuaExternalResult as _, LuaResult, LuaTable};
+use mlua::prelude::{Lua, LuaResult, LuaTable};
 
 pub(crate) use cache::{get_context, remove_context, store_context};
 
@@ -43,8 +43,37 @@ pub fn register(lua: &Lua, options: LuaTable) -> LuaResult<()> {
     };
     lua.set_app_data(options.clone());
 
-    if core.thread()? <= 1 {
-        core.register_task(move |_lua| exporter::init(options.clone()).into_lua_err())?;
+    // Log registration details via HAProxy core.log
+    let _ = core.log(
+        haproxy_api::LogLevel::Info,
+        format!(
+            "[haproxy-otel] register called: service_name={} endpoint={:?} protocol={:?} headers={} thread={}",
+            service_name,
+            endpoint.as_ref().unwrap_or(&"<default>".to_string()),
+            protocol.as_ref().unwrap_or(&"<default>".to_string()),
+            headers.as_ref().map(|h| h.len()).unwrap_or(0),
+            core.thread().unwrap_or(0)
+        ),
+    );
+
+    // Initialize exporter directly - OpenTelemetry global state handles idempotency
+    let _ = core.log(
+        haproxy_api::LogLevel::Info,
+        format!("[haproxy-otel] calling exporter::init on thread {}", core.thread().unwrap_or(0)),
+    );
+    match exporter::init(options.clone()) {
+        Ok(_) => {
+            let _ = core.log(
+                haproxy_api::LogLevel::Info,
+                "[haproxy-otel] exporter init: SUCCESS".to_string(),
+            );
+        }
+        Err(e) => {
+            let _ = core.log(
+                haproxy_api::LogLevel::Err,
+                format!("[haproxy-otel] exporter init: FAILED - {}", e),
+            );
+        }
     }
 
     #[rustfmt::skip]
